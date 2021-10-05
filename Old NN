@@ -1,0 +1,242 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Oct 12 14:42:24 2019
+
+@author: shaunryer
+"""
+import numpy as np
+import csv
+import math
+import sys
+import matplotlib.pyplot as plt
+
+def make_alpha(nodes,inputs,flag):
+    if flag==1:
+        alpha = (np.random.rand(nodes,inputs)-.5)/5
+    else:
+        alpha = np.zeros((nodes, inputs))
+    alpha = np.insert(alpha,0,0,axis=1)
+#    print alpha
+    return alpha
+
+def LinearForward(x,alpha):
+    a = alpha.dot(x)
+    return a
+
+def SigmoidForward(a):
+    z = np.ones(len(a)+1) #sigmoid we use sigmoid
+    z[1:]=1/(1+np.exp(-a))
+    z = z.reshape(len(a)+1,1)
+    return z
+
+def SoftmaxForward(y,b):
+    top = np.exp(b)
+    bottom = np.sum(top)
+    y_hat = top/bottom
+    return y_hat
+
+def CrossEntropyForward(y,y_hat):
+    val = -np.log(y_hat[y])
+    return val
+
+def ForwardCalc(x,alpha,beta,y):
+#    print x.shape
+    a = LinearForward(x,alpha)
+#    print 'a=\n',a,'\n'
+#    
+    z = SigmoidForward(a)
+#    print 'z=\n',z,'\n'
+#    
+    b = LinearForward(z,beta) 
+#    print 'b=\n',b,'\n'
+#    
+    y_hat = SoftmaxForward(y,b)
+#    print 'y_hat=\n',y_hat,'\n'
+
+    l = CrossEntropyForward(y,y_hat)
+#    print 'l=\n',l,'\n'
+    return y_hat,l,b,z,a
+
+def BackCalc(gamma,y,x,y_hat,l,b,z,a,alpha,beta):
+    yi = np.zeros((10, 1))
+    yi[y] = 1
+    
+    dl_db = (-yi+y_hat)
+#    print 'dl_db=\n',dl_db,'\n'
+    #
+#    print dl_db.shape, beta[:,1:].shape
+    dl_dz = beta[:,1:].T.dot(dl_db)
+#    print 'dl_dz=\n',dl_dz,'\n'
+      
+#    print dl_dz.T.shape, z[1:,:].T.shape
+    dl_da = (dl_dz.T*(z[1:,:]*(1-z[1:,:])).T)################first term in z?
+#    print 'dl_da=\n',dl_da,'\n'
+
+    dl_dalpha = dl_da.T*x.T
+#    print 'dl_dalpha=\n',dl_dalpha.shape,'\n'
+
+    dl_dbeta = dl_db*z.T
+#    print 'dl_dbeta=\n',dl_dbeta,'\n'
+  
+    beta = beta-gamma*dl_dbeta
+    
+    alpha = alpha-gamma*dl_dalpha
+#    print 'new beta=\n',beta,'\n'
+#    print alpha
+    return alpha,beta
+
+def workonrow(data,alpha,beta,gamma,n):
+    y = int(data[n][0])
+    x = np.insert(data[n][1:],0,1)
+    y_hat,l,b,z,a = ForwardCalc(x,alpha,beta,y)
+    alpha,beta = BackCalc(gamma,y,x,y_hat,l,b,z,a,alpha,beta)
+    
+    return alpha,beta
+
+def loop4alldata(data,alpha,beta,gamma):
+    for n in range(len(data)):
+#        print n
+#        print alpha,beta
+        alpha,beta = workonrow(data,alpha,beta,gamma,n)
+        
+    return alpha,beta 
+
+def epochloop(data,alpha,beta,gamma,epoch,alphalist,betalist):
+    
+    for n in range(epoch):
+        print n
+#        print beta
+        alpha,beta = loop4alldata(data,alpha,beta,gamma)
+        alphalist.append(alpha)
+        betalist.append(beta)
+    return alphalist,betalist
+
+def testdata(alphalist,betalist,data,epoch):
+    terror = []
+    tloss = []
+    
+    for m in range(epoch):
+        labels = []
+        print m
+        alpha = alphalist[m]
+        beta = betalist[m]
+        error = 0
+        l_total = 0
+        for n in range(len(data)):
+            
+            y = int(data[n][0])
+            x = np.insert(data[n][1:],0,1)
+            
+            a = LinearForward(x,alpha)
+        
+           
+            z = SigmoidForward(a)
+        
+           
+            b = LinearForward(z,beta) 
+        
+            
+            y_hat = SoftmaxForward(y,b)
+        
+        
+            l = CrossEntropyForward(y,y_hat)
+            
+            l_total = l_total +l
+    #        print np.argmax(y_hat),y
+            labels.append(np.argmax(y_hat))
+            if np.argmax(y_hat)!=y:
+                error = error+1
+        terror.append(float(error)/len(data))
+        tloss.append(l_total[0]/len(data))
+    return terror,tloss,labels
+
+def print_stuff(trainerror,trainloss,testerror,testloss):
+    stringinfo = ''
+    for n in range(len(trainerror)):
+        stringinfo += 'epoch='+str(n+1)+' crossentropy(train): '+str(trainloss[n])+'\n'
+        stringinfo += 'epoch='+str(n+1)+' crossentropy(test): '+str(testloss[n])+'\n'
+    stringinfo += 'error(train): '+ str(trainerror[-1])+'\n'
+    stringinfo += 'error(test): '+ str(testerror[-1])+'\n'
+    return stringinfo
+
+def main():
+    file1 = 'largeTrain.csv'
+    file2 = 'largeValidation.csv'
+    fileout1 = 'faketrain.labels'
+    fileout2 = 'faketest.labels'
+    filemetrics = 'fakemetrics.txt'
+    epoch = 100
+    hidden = 50
+    flag = 1
+    gamma = .001#
+    
+#    file1 = sys.argv[1]
+#    file2 = sys.argv[2]
+#    fileout1 = sys.argv[3]
+#    fileout2 = sys.argv[4]
+#    filemetrics = sys.argv[5]
+#    epoch = int(sys.argv[6])
+#    hidden = int(sys.argv[7])
+#    flag = int(sys.argv[8])
+#    gamma = float(sys.argv[9])  
+    
+    data = np.genfromtxt(file1,dtype=float,delimiter=',')
+    x = np.insert(data[0][1:],0,1)
+    alpha = make_alpha(hidden,len(x)-1,flag)
+    beta = make_alpha(10,hidden,flag)
+    
+    ###############################train#######################################
+    
+#    print 'train'
+    alphalist = []
+    betalist = []
+    alphalist,betalist = epochloop(data,alpha,beta,gamma,epoch,alphalist,betalist)
+#    print 'test'
+    
+    ###############################test########################################
+    
+    data = np.genfromtxt(file1,dtype=float,delimiter=',')
+    trainerror = []
+    trainloss = []
+    trainerror,trainloss,labels_train = testdata(alphalist,betalist,data,epoch)
+#    print labels_train
+    data = np.genfromtxt(file2,dtype=float,delimiter=',')
+    testerror = []
+    testloss = []
+    testerror,testloss,labels_test = testdata(alphalist,betalist,data,epoch)
+#    print labels_test   
+    
+    ###############################data########################################
+    
+    
+#    print '############data###############'
+    printdata = print_stuff(trainerror,trainloss,testerror,testloss)
+    
+    ###########################################################################
+    
+    out_train = ""
+    for n in range(len(labels_train)):
+        out_train = out_train + str(labels_train[n]) + '\n'
+    writefile= open(fileout1,"w+")
+    writefile.writelines(out_train)
+    writefile.close() 
+    
+    out_test = ""
+    for n in range(len(labels_test)):
+        out_test = out_test + str(labels_test[n]) + '\n'
+    writefile= open(fileout2,"w+")
+    writefile.writelines(out_test)
+    writefile.close()
+    
+    writefile= open(filemetrics,"w+")
+    writefile.writelines(printdata)
+    writefile.close()
+
+    t= np.arange(1,epoch+1)
+    # red dashes, blue squares and green triangles
+    plt.plot(t,trainloss, 'r--', t, testloss, 'b--')
+    plt.show()
+
+if __name__== "__main__":
+    main()
